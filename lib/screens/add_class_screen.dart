@@ -281,93 +281,99 @@ class _AddClassScreenState extends State<AddClassScreen> {
   // =========================================================
 
   Future<void> _saveClass() async {
-    if (selectedSubject == null ||
-        selectedGrade == null ||
-        selectedDay == null ||
-        startTime == null ||
-        endTime == null) {
-      _showMessage(
-        'Please complete all required fields.',
-      );
-      return;
-    }
+  if (selectedSubject == null ||
+      selectedGrade == null ||
+      selectedDay == null ||
+      startTime == null ||
+      endTime == null) {
+    _showMessage(
+      'Please complete all required fields.',
+    );
+    return;
+  }
 
-    if (_timeToMinutes(endTime!) <=
-        _timeToMinutes(startTime!)) {
-      _showMessage(
-        'End time must be after start time.',
-      );
-      return;
-    }
+  if (_timeToMinutes(endTime!) <=
+      _timeToMinutes(startTime!)) {
+    _showMessage(
+      'End time must be after start time.',
+    );
+    return;
+  }
 
-    final User? user =
-        FirebaseAuth.instance.currentUser;
+  final User? user =
+      FirebaseAuth.instance.currentUser;
 
-    if (user == null) {
-      _showMessage('Please login first.');
-      return;
-    }
+  if (user == null) {
+    _showMessage('Please login first.');
+    return;
+  }
 
-    setState(() {
-      isSaving = true;
-    });
+  setState(() {
+    isSaving = true;
+  });
 
-    try {
-      final classData = {
-        'userId': user.uid,
-        'subject': selectedSubject,
-        'grade': selectedGrade,
-        'day': selectedDay,
-        if (selectedDate != null)
-          'dateKey': _formatDateKey(selectedDate!),
-        'startTime': _formatTime(startTime),
-        'endTime': _formatTime(endTime),
-        'startMinutes': _timeToMinutes(startTime!),
-        'endMinutes': _timeToMinutes(endTime!),
-        'room': roomController.text.trim(),
-        'note': noteController.text.trim(),
-      };
+  try {
+    final classData = {
+      'userId': user.uid,
+      'subject': selectedSubject,
+      'grade': selectedGrade,
+      'day': selectedDay,
+      if (selectedDate != null)
+        'dateKey': _formatDateKey(selectedDate!),
+      'startTime': _formatTime(startTime),
+      'endTime': _formatTime(endTime),
+      'startMinutes': _timeToMinutes(startTime!),
+      'endMinutes': _timeToMinutes(endTime!),
+      'room': roomController.text.trim(),
+      'note': noteController.text.trim(),
+    };
 
-      String classId;
+    String classId;
 
-      // =====================================================
-      // EDIT CLASS
-      // =====================================================
+    // =====================================================
+    // EDIT CLASS
+    // =====================================================
 
-      if (isEditMode) {
-        classId = widget.classId!;
+    if (isEditMode) {
+      classId = widget.classId!;
 
-        // Cancel old notification first.
+      try {
         await NotificationService.instance.cancelReminder(
           _notificationId(classId),
         );
-
-        await FirebaseFirestore.instance
-            .collection('classes')
-            .doc(classId)
-            .update(classData);
+      } catch (e) {
+        debugPrint(
+          'Teachly: Could not cancel old class notification: $e',
+        );
       }
 
-      // =====================================================
-      // ADD CLASS
-      // =====================================================
+      await FirebaseFirestore.instance
+          .collection('classes')
+          .doc(classId)
+          .update(classData);
+    }
 
-      else {
-        final DocumentReference<Map<String, dynamic>> doc =
-            await FirebaseFirestore.instance
-                .collection('classes')
-                .add({
-          ...classData,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
+    // =====================================================
+    // ADD CLASS
+    // =====================================================
 
-        classId = doc.id;
-      }
+    else {
+      final DocumentReference<Map<String, dynamic>> doc =
+          await FirebaseFirestore.instance
+              .collection('classes')
+              .add({
+        ...classData,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
 
-      // =====================================================
-      // SCHEDULE NOTIFICATION
-      // =====================================================
+      classId = doc.id;
+    }
 
+    // =====================================================
+    // SCHEDULE NOTIFICATION
+    // =====================================================
+
+    try {
       await _scheduleClassNotification(
         classId: classId,
         subject: selectedSubject!,
@@ -376,38 +382,75 @@ class _AddClassScreenState extends State<AddClassScreen> {
         startTime: startTime!,
         room: roomController.text.trim(),
       );
-
-      if (!mounted) return;
-
-      _showMessage(
-        isEditMode
-            ? 'Class updated successfully!'
-            : 'Class saved successfully!',
-        isError: false,
+    } catch (e, stackTrace) {
+      debugPrint(
+        '==========================================',
       );
-
-      Navigator.pop(context, true);
-    } on FirebaseException catch (e) {
-      if (!mounted) return;
-
-      _showMessage(
-        e.message ??
-            'Something went wrong while saving the class.',
+      debugPrint(
+        'Teachly: CLASS NOTIFICATION ERROR',
       );
-    } catch (_) {
-      if (!mounted) return;
-
-      _showMessage(
-        'Something went wrong. Please try again.',
+      debugPrint(
+        'Error: $e',
       );
-    } finally {
-      if (mounted) {
-        setState(() {
-          isSaving = false;
-        });
-      }
+      debugPrint(
+        'StackTrace: $stackTrace',
+      );
+      debugPrint(
+        '==========================================',
+      );
+    }
+
+    if (!mounted) return;
+
+    _showMessage(
+      isEditMode
+          ? 'Class updated successfully!'
+          : 'Class saved successfully!',
+      isError: false,
+    );
+
+    Navigator.pop(context, true);
+  } on FirebaseException catch (e) {
+    if (!mounted) return;
+
+    debugPrint(
+      'Teachly Firebase ERROR: ${e.code} - ${e.message}',
+    );
+
+    _showMessage(
+      e.message ??
+          'Something went wrong while saving the class.',
+    );
+  } catch (e, stackTrace) {
+    debugPrint(
+      '==========================================',
+    );
+    debugPrint(
+      'Teachly SAVE CLASS ERROR',
+    );
+    debugPrint(
+      'Error: $e',
+    );
+    debugPrint(
+      'StackTrace: $stackTrace',
+    );
+    debugPrint(
+      '==========================================',
+    );
+
+    if (!mounted) return;
+
+    _showMessage(
+      'Something went wrong while saving the class.',
+    );
+  } finally {
+    if (mounted) {
+      setState(() {
+        isSaving = false;
+      });
     }
   }
+}
 
   // =========================================================
   // MESSAGE
